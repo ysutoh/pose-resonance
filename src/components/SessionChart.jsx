@@ -25,7 +25,7 @@ const SessionChart = ({ data, audioUrl, onClose }) => {
                     </button>
                 </div>
 
-                <div className="p-6 flex-1 min-h-[400px]">
+                <div className="p-6 w-full h-[400px] sm:h-[500px]">
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                             data={data}
@@ -52,7 +52,7 @@ const SessionChart = ({ data, audioUrl, onClose }) => {
                             <Line type="monotone" name="Head Tilt (°)" dataKey="headDelta" stroke="#8b5cf6" dot={false} />
                             <Line type="monotone" name="Neck Offset (%)" dataKey="neckOffsetDelta" stroke="#f59e0b" dot={false} />
                             <Line type="monotone" name="Embouchure Offset (°)" dataKey="embouchureDelta" stroke="#ef4444" dot={false} />
-                            {audioUrl && (
+                            {audioUrl && data.length > 0 && playbackTime > 0 && playbackTime <= data[data.length - 1].time && (
                                 <ReferenceLine x={playbackTime} stroke="#10b981" strokeDasharray="3 3" />
                             )}
                         </LineChart>
