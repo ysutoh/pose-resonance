@@ -2,9 +2,11 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import { calculateAngle, isReliable } from '../utils/angleCalculator';
-
-const WARNING_THRESHOLD = 15; // degrees
+import { calculateAngle, calculateNeckOffset, isReliable } from '../utils/angleCalculator';
+import { usePostureSession } from '../hooks/usePostureSession';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import Dashboard from './Dashboard';
+import SessionChart from './SessionChart';
 
 const FluteFormAnalyzer = () => {
     const videoRef = useRef(null);
@@ -12,17 +14,38 @@ const FluteFormAnalyzer = () => {
     const requestRef = useRef();
 
     const [modelLoaded, setModelLoaded] = useState(false);
-    const [metrics, setMetrics] = useState({ shoulder: 0, head: 0 });
+    const [metrics, setMetrics] = useState({ shoulder: 0, head: 0, neckOffset: 0, embouchure: 0 });
     const [detector, setDetector] = useState(null);
     const [errorMsg, setErrorMsg] = useState(null);
+    const [showChart, setShowChart] = useState(false);
+
+    // Hook handles calibration state, session recording, and baseline tracking automatically
+    const sessionState = usePostureSession(metrics);
+    const audioState = useAudioRecorder();
+
+    // Sync audio recording with session recording
+    useEffect(() => {
+        if (sessionState.isSessionActive && !audioState.isRecording) {
+            audioState.startRecording();
+        } else if (!sessionState.isSessionActive && audioState.isRecording) {
+            audioState.stopRecording();
+        }
+    }, [sessionState.isSessionActive, audioState]);
 
     useEffect(() => {
         let active = true;
 
         const setupCamera = async () => {
             try {
+                // Specifically request a landscape aspect ratio (e.g., 16:9)
+                // This is crucial for flute playing to capture the full arm span.
+                // We use advanced constraints to strongly prefer width > height.
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+                    video: {
+                        facingMode: 'user',
+                        width: { min: 640, ideal: 1280 },
+                        aspectRatio: { ideal: 1.7777777778 } // 16:9
+                    },
                     audio: false,
                 });
                 if (videoRef.current && active) {
@@ -64,10 +87,22 @@ const FluteFormAnalyzer = () => {
     }, []);
 
     const drawKeypointsAndBones = (keypoints, ctx) => {
-        // Basic connections for torso and head
         const adjacentKeyPoints = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
 
-        ctx.strokeStyle = '#3b82f6';
+        // Check if we are warning currently (visual feedback on the skeleton)
+        const base = sessionState.baseline;
+        let isWarning = false;
+        if (base) {
+            isWarning =
+                Math.abs(metrics.shoulder - base.shoulder) > 5 ||
+                Math.abs(metrics.head - base.head) > 5 ||
+                Math.abs(metrics.neckOffset - base.neckOffset) > 5 ||
+                Math.abs(metrics.embouchure - base.embouchure) > 5;
+        } else {
+            isWarning = Math.abs(metrics.shoulder) > 15 || Math.abs(metrics.head) > 15 || Math.abs(metrics.embouchure) > 15;
+        }
+
+        ctx.strokeStyle = isWarning ? '#ef4444' : '#3b82f6'; // Red vs Blue
         ctx.lineWidth = 2;
 
         adjacentKeyPoints.forEach(([i, j]) => {
@@ -81,11 +116,12 @@ const FluteFormAnalyzer = () => {
             }
         });
 
-        keypoints.forEach(keypoint => {
+        keypoints.forEach((keypoint, index) => {
             if (isReliable(keypoint)) {
                 ctx.beginPath();
                 ctx.arc(keypoint.x, keypoint.y, 4, 0, 2 * Math.PI);
-                ctx.fillStyle = '#ef4444';
+                // Highlight nose specifically for offset visualization
+                ctx.fillStyle = index === 0 ? '#10b981' : '#ffffff';
                 ctx.fill();
             }
         });
@@ -99,7 +135,6 @@ const FluteFormAnalyzer = () => {
 
         const { videoWidth, videoHeight } = videoRef.current;
 
-        // Sync canvas size to video size if needed
         if (canvasRef.current.width !== videoWidth) {
             canvasRef.current.width = videoWidth;
             canvasRef.current.height = videoHeight;
@@ -114,26 +149,61 @@ const FluteFormAnalyzer = () => {
                 const keypoints = poses[0].keypoints;
                 drawKeypointsAndBones(keypoints, ctx);
 
-                // Find relevant keypoints
                 const leftShoulder = keypoints.find(k => k.name === 'left_shoulder');
                 const rightShoulder = keypoints.find(k => k.name === 'right_shoulder');
                 const leftEar = keypoints.find(k => k.name === 'left_ear');
                 const rightEar = keypoints.find(k => k.name === 'right_ear');
+                const leftEye = keypoints.find(k => k.name === 'left_eye');
+                const rightEye = keypoints.find(k => k.name === 'right_eye');
+                const leftWrist = keypoints.find(k => k.name === 'left_wrist');
+                const rightWrist = keypoints.find(k => k.name === 'right_wrist');
+                const nose = keypoints.find(k => k.name === 'nose');
 
                 let newShoulderAngle = metrics.shoulder;
                 let newHeadAngle = metrics.head;
+                let newNeckOffset = metrics.neckOffset;
+                let newEmbouchure = metrics.embouchure;
 
                 if (isReliable(leftShoulder) && isReliable(rightShoulder)) {
-                    newShoulderAngle = calculateAngle(rightShoulder, leftShoulder); // Invert calculation due to mirroring
+                    newShoulderAngle = calculateAngle(rightShoulder, leftShoulder);
                 }
 
                 if (isReliable(leftEar) && isReliable(rightEar)) {
-                    newHeadAngle = calculateAngle(rightEar, leftEar); // Invert calculation
+                    newHeadAngle = calculateAngle(rightEar, leftEar);
+                }
+
+                if (isReliable(leftShoulder) && isReliable(rightShoulder) && isReliable(nose)) {
+                    // Pass right, left because of mirror mirroring? The video is horizontally flipped in CSS.
+                    // For calculation, just calculate raw coordinate offsets.
+                    newNeckOffset = calculateNeckOffset(leftShoulder, rightShoulder, nose);
+                    // Invert horizontal axis because of mirror if needed
+                    newNeckOffset = -newNeckOffset;
+                }
+
+                // Face Angle: Try eyes first, fallback to ears
+                let faceAngle = null;
+                if (isReliable(leftEye) && isReliable(rightEye)) {
+                    faceAngle = calculateAngle(rightEye, leftEye);
+                } else if (isReliable(leftEar) && isReliable(rightEar)) {
+                    faceAngle = calculateAngle(rightEar, leftEar);
+                }
+
+                // Flute Proxy Angle: wrists
+                let fluteProxyAngle = null;
+                if (isReliable(leftWrist) && isReliable(rightWrist)) {
+                    fluteProxyAngle = calculateAngle(rightWrist, leftWrist);
+                }
+
+                // Embouchure Alignment
+                if (faceAngle !== null && fluteProxyAngle !== null) {
+                    newEmbouchure = faceAngle - fluteProxyAngle;
                 }
 
                 setMetrics({
                     shoulder: isNaN(newShoulderAngle) ? 0 : newShoulderAngle,
-                    head: isNaN(newHeadAngle) ? 0 : newHeadAngle
+                    head: isNaN(newHeadAngle) ? 0 : newHeadAngle,
+                    neckOffset: isNaN(newNeckOffset) || newNeckOffset === null ? 0 : newNeckOffset,
+                    embouchure: isNaN(newEmbouchure) ? 0 : newEmbouchure
                 });
             }
         } catch (e) {
@@ -150,57 +220,50 @@ const FluteFormAnalyzer = () => {
         return () => cancelAnimationFrame(requestRef.current);
     }, [modelLoaded, detector]);
 
-    const MetricCard = ({ label, value }) => {
-        // Check if absolute angle exceeds threshold
-        const isWarning = Math.abs(value) > WARNING_THRESHOLD;
-
-        return (
-            <div className={`glass-panel p-4 rounded-xl flex flex-col items-center justify-center transition-colors duration-300 w-32 ${isWarning ? 'shadow-danger/50 border-danger/50 text-danger' : 'text-white'}`}>
-                <span className="text-xs uppercase tracking-wider opacity-80 mb-1">{label}</span>
-                <span className="text-3xl font-bold font-mono">
-                    {Math.abs(value).toFixed(1)}°
-                </span>
-                <span className="text-xs mt-1">
-                    {value > 2 ? 'Right Tilt' : value < -2 ? 'Left Tilt' : 'Level'}
-                </span>
-            </div>
-        );
-    };
-
     return (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-            {/* Video & Canvas container */}
-            <div className="relative w-full h-full max-w-4xl max-h-screen overflow-hidden flex items-center justify-center bg-surface">
-                {errorMsg ? (
-                    <div className="text-danger p-4 text-center">{errorMsg}</div>
+        <div className="w-full h-full flex items-center justify-center bg-black relative">
+            <div className="relative w-full max-w-6xl aspect-[4/3] sm:aspect-video max-h-[100dvh] overflow-hidden flex items-center justify-center bg-surface m-auto shadow-2xl">
+                {(errorMsg || audioState.errorMsg) ? (
+                    <div className="text-danger p-4 text-center z-10 glass-panel">{errorMsg || audioState.errorMsg}</div>
                 ) : !modelLoaded ? (
-                    <div className="flex flex-col items-center text-white animate-pulse-slow">
+                    <div className="flex flex-col items-center z-10 text-white animate-pulse-slow glass-panel p-8 rounded-2xl">
                         <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-                        <p>Loading AI Model...</p>
+                        <p className="font-semibold tracking-wider">Loading AI Model</p>
                     </div>
                 ) : null}
 
-                {/* Mirror the video to match natural user expectation */}
                 <video
                     ref={videoRef}
                     playsInline
                     muted
                     autoPlay
-                    className={`absolute w-full h-full object-cover transform -scale-x-100 ${!modelLoaded ? 'opacity-0' : 'opacity-100'}`}
+                    className={`absolute inset-0 w-full h-full object-contain transform -scale-x-100 ${!modelLoaded ? 'opacity-0' : 'opacity-100'}`}
                 />
                 <canvas
                     ref={canvasRef}
-                    className="absolute w-full h-full object-cover transform -scale-x-100 z-10 pointer-events-none"
+                    className="absolute w-full h-full object-contain transform -scale-x-100 z-10 pointer-events-none"
+                    style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%'
+                    }}
                 />
 
-                {/* HUD Elements */}
                 {modelLoaded && (
-                    <div className="absolute top-8 left-0 right-0 z-20 flex justify-around px-4 pointer-events-none">
-                        <MetricCard label="Shoulders" value={metrics.shoulder} />
-                        <MetricCard label="Head Base" value={metrics.head} />
-                    </div>
+                    <Dashboard
+                        metrics={metrics}
+                        sessionState={sessionState}
+                        onShowChart={() => setShowChart(true)}
+                    />
                 )}
             </div>
+
+            {showChart && (
+                <SessionChart
+                    data={sessionState.sessionData}
+                    audioUrl={audioState.audioUrl}
+                    onClose={() => setShowChart(false)}
+                />
+            )}
         </div>
     );
 };

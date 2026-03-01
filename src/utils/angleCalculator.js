@@ -24,3 +24,27 @@ export const calculateAngle = (leftPoint, rightPoint) => {
 export const isReliable = (point, minConfidence = 0.3) => {
     return point && point.score && point.score >= minConfidence;
 };
+
+/**
+ * Calculates the neck offset as a percentage based on shoulder width.
+ * A value of 0 means the nose is perfectly centered between the shoulders.
+ * Positive values indicate the head is shifted right relative to the body center.
+ */
+export const calculateNeckOffset = (leftShoulder, rightShoulder, nose) => {
+    if (!leftShoulder || !rightShoulder || !nose) return null;
+
+    // Calculate center of the shoulders (neck base X)
+    const neckBaseX = (leftShoulder.x + rightShoulder.x) / 2;
+
+    // Calculate the horizontal shift from center
+    const shiftX = nose.x - neckBaseX;
+
+    // Normalize against shoulder width (gives a roughly size-invariant ratio)
+    const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
+
+    // Prevent division by zero
+    if (shoulderWidth === 0) return 0;
+
+    // Return as a percentage
+    return (shiftX / shoulderWidth) * 100;
+};
