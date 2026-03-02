@@ -140,7 +140,11 @@ export const usePostureSession = (currentMetrics) => {
                         shoulderDelta: current.shoulder - base.shoulder,
                         headDelta: current.head - base.head,
                         neckOffsetDelta: current.neckOffset - base.neckOffset,
-                        embouchureDelta: current.embouchure - base.embouchure
+                        embouchureDelta: current.embouchure - base.embouchure,
+                        shoulderRaw: current.shoulder,
+                        headRaw: current.head,
+                        neckOffsetRaw: current.neckOffset,
+                        embouchureRaw: current.embouchure
                     };
                     setSessionData(prev => [...prev, snapshot]);
                 }
@@ -153,6 +157,11 @@ export const usePostureSession = (currentMetrics) => {
     }, [isSessionActive]);
 
 
+    const updateBaseline = useCallback((newBaseline) => {
+        setBaseline(newBaseline);
+        localStorage.setItem('posture_baseline', JSON.stringify(newBaseline));
+    }, []);
+
     return {
         baseline,
         isCalibrating,
@@ -161,6 +170,7 @@ export const usePostureSession = (currentMetrics) => {
         startCalibration,
         isSessionActive,
         sessionData,
-        toggleSession
+        toggleSession,
+        updateBaseline
     };
 };

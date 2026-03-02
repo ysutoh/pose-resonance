@@ -9,6 +9,7 @@ It uses a device's web camera to detect body posture and provides immediate visu
 - **Flute-Specific Metrics:** Calculates horizontal alignment of the shoulders and the base of the head (ears).
 - **Visual Feedback:** Dynamic dashboard that displays angles and turns red to warn the user if the posture tilts beyond acceptable thresholds (±15 degrees).
 - **Mobile First & PWA:** Designed to run smoothly on mobile devices (Android Chrome, iOS Safari) with Progressive Web App (PWA) support for an app-like experience.
+- **Wide-Angle Camera Support:** Attempts to automatically request the widest available camera angle (`zoom: 0`) to accommodate players with limited physical space. *Note: Support for selecting specific ultra-wide lenses via the browser depends heavily on the device hardware and the specific OS/Browser combination (especially on iOS).*
 - **Privacy Focused:** All AI processing runs locally in the browser. No video data is sent to or processed by external servers.
 
 ## Tech Stack

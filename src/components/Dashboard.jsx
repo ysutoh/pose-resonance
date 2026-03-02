@@ -11,21 +11,29 @@ const MetricCard = ({ label, value, baselineValue, unit, isOffset = false }) => 
     const threshold = isOffset ? WARNING_THRESHOLD_OFFSET : WARNING_THRESHOLD_ANGLE;
     const isWarning = baselineValue !== null && absDeviation > threshold;
 
+    // Determine the primary display value depending on whether baseline is set
+    const mainValueExp = baselineValue !== null ? (deviation > 0 ? '+' : '') + deviation.toFixed(1) : Math.abs(value).toFixed(1);
+    const mainValueColor = isWarning ? 'text-danger' : (baselineValue !== null ? 'text-white' : 'text-white/80');
+
     return (
-        <div className={`glass-panel p-2 sm:p-3 rounded-lg flex flex-col items-center justify-center transition-colors duration-300 w-20 sm:w-28 ${isWarning ? 'shadow-danger/50 border-danger/50 text-danger' : 'text-white'}`}>
-            <span className="text-[9px] sm:text-[10px] uppercase tracking-wider opacity-80 mb-0.5 font-semibold text-center leading-tight whitespace-nowrap overflow-hidden text-ellipsis w-full">{label}</span>
-            <span className="text-lg sm:text-2xl font-bold font-mono tracking-tighter">
-                {Math.abs(value).toFixed(1)}{unit}
+        <div className={`glass-panel p-2 sm:p-3 rounded-lg flex flex-col items-center justify-center transition-all duration-300 w-20 sm:w-28 border ${isWarning ? 'border-danger/80 bg-danger/20 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-black/20'}`}>
+            <span className={`text-[9px] sm:text-[10px] uppercase tracking-wider mb-0.5 font-semibold text-center leading-tight whitespace-nowrap overflow-hidden w-full ${isWarning ? 'text-danger-light' : 'text-white/80'}`}>
+                {label}
             </span>
+
+            <span className={`text-lg sm:text-2xl font-bold font-mono tracking-tighter ${mainValueColor}`}>
+                {mainValueExp}{unit}
+            </span>
+
             {baselineValue !== null ? (
                 <div className="w-full flex justify-between items-center mt-1 text-[9px] sm:text-[10px] opacity-80 border-t border-white/10 pt-1">
-                    <span>Δ{absDeviation.toFixed(1)}</span>
+                    <span className="text-white/60">Raw: {Math.abs(value).toFixed(1)}°</span>
                     <span className={deviation > 0 ? 'text-primary font-bold' : 'text-accent font-bold'}>
                         {deviation > 0 ? 'R' : deviation < 0 ? 'L' : '-'}
                     </span>
                 </div>
             ) : (
-                <span className="text-[9px] sm:text-[10px] mt-1 opacity-50">None</span>
+                <span className="text-[9px] sm:text-[10px] mt-1 opacity-50 text-white/60 pt-1 border-t border-white/10 w-full text-center">No Base</span>
             )}
         </div>
     );

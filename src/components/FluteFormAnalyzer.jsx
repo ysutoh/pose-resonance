@@ -44,7 +44,8 @@ const FluteFormAnalyzer = () => {
                     video: {
                         facingMode: 'user',
                         width: { min: 640, ideal: 1280 },
-                        aspectRatio: { ideal: 1.7777777778 } // 16:9
+                        aspectRatio: { ideal: 1.7777777778 }, // 16:9
+                        advanced: [{ zoom: 0 }] // Attempt to use the widest possible angle
                     },
                     audio: false,
                 });
@@ -262,6 +263,7 @@ const FluteFormAnalyzer = () => {
                     data={sessionState.sessionData}
                     audioUrl={audioState.audioUrl}
                     onClose={() => setShowChart(false)}
+                    onSetBaseline={sessionState.updateBaseline}
                 />
             )}
         </div>
